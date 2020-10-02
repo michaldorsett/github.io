@@ -1,0 +1,63 @@
+#!/bin/bash +x
+
+THIS_FILE_NAME=${0##*/}
+usage() {
+  echo ""
+  echo "USAGE: $THIS_FILE_NAME [ -d (delete rules) ]" >&2
+  echo ""
+}
+DO_INSERT=true
+OPTIND=1
+while getopts "d" o; do
+    case "${o}" in
+        d)
+            DO_INSERT=false
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+
+declare -A tables
+chains=("INPUT" "FORWARD" "OUTPUT")
+tables["filter"]=${chains[@]}
+chains=("PREROUTING" "POSTROUTING" "OUTPUT")
+tables["nat"]=${chains[@]}
+chains=("PREROUTING" "POSTROUTING" "INPUT" "OUTPUT" "FORWARD")
+tables["mangle"]=${chains[@]}
+chains=("PREROUTING" "OUTPUT")
+tables["raw"]=${chains[@]}
+chains=("FORWARD" "OUTPUT")
+tables["security"]=${chains[@]}
+#for table in "${!tables[@]}"; do 
+#    echo tables=${table}
+#    as=${tables[${table}]}
+#    for a in ${as[@]}; do
+#        echo "  ${a}"
+#    done
+    #exit
+#done
+#exit
+
+if [ "${DO_INSERT}" == "true" ]; then
+    for table in "${!tables[@]}"; do 
+        echo "Inserting logs in table ${table}"
+        TABLE="-t ${table}"
+        as=${tables[${table}]}
+        for a in ${as[@]}; do
+            # SOME_PREFIX can be replaced with whatever string. Its there for purposes of identifying the log lines in syslog
+            iptables ${TABLE} -I ${a} 1 -s 11.0.0.0/8 -j LOG --log-prefix "SOME_PREFIX" --log-level warning
+        done
+    done
+else
+    for table in "${!tables[@]}"; do 
+        while read line; do 
+            newline=`echo ${line} | sed 's/-[A-Z] //g'`
+            newline=`echo iptables -t ${table} -D ${newline}`
+            eval ${newline}
+        done< <(iptables -t ${table} -S | grep "SOME_PREFIX")
+    done
+fi
